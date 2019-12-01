@@ -15,6 +15,7 @@ function print_usage {
     echo '    run: runs the given target, producing an output file'
     echo '    check: checks that the given output file matches the correct answer'
     echo '    commit: commits the given target to Git'
+    echo '    init: initializes the given target'
 }
 
 function run {
@@ -70,6 +71,12 @@ function commit {
     git reset
     git add "$input" "$correct" "$folder"
     git commit -m "Solution $pretty"
+}
+
+function init {
+    mkdir -p "$base/$year/$day/$part/$solution"
+    touch "$base/$year/$day/$part/$solution/run"
+    chmod +x "$base/$year/$day/$part/$solution/run"
 }
 
 function local_find {
@@ -145,6 +152,8 @@ elif [ $command == "check" ]; then
     check
 elif [ $command == "commit" ]; then
     commit
+elif [ $command == "init" ]; then
+    init
 else
     echo_err "Unrecognized command '$command'"
     exit 1
