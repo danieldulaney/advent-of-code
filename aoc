@@ -1,0 +1,152 @@
+#! /usr/bin/env bash
+
+function echo_info {
+    echo "$@"
+}
+
+function echo_err {
+    echo "$@"
+}
+
+function print_usage {
+    echo 'Usage: aoc <command> [target]'
+    echo ''
+    echo '<command> may be one of:'
+    echo '    run: runs the given target, producing an output file'
+    echo '    check: checks that the given output file matches the correct answer'
+    echo '    commit: commits the given target to Git'
+}
+
+function run {
+    if [ ! -f "$executable" ]; then
+        echo_err "Executable $executable does not exist"
+        exit 2
+    fi
+
+    if [ ! -f "$input" ]; then
+        echo_err "Input file $input does not exist"
+        exit 2
+    fi
+
+    echo_info "Running $executable with $(wc -c < $input) bytes/$(wc -l < $input) lines of input..."
+    "$executable" < "$input" > "$output"
+    err=$?
+
+
+    if [ $err != 0 ]; then
+        echo_err "$executable failed with error code $err"
+        exit 3
+    fi
+
+    echo_info "Output:"
+    echo
+
+    cat "$output"
+
+    echo
+    echo_info "Finished running $executable"
+}
+
+function check {
+
+    if [ ! -f "$correct" ]; then
+        echo_err "Could not find correct answer for $pretty at $correct"
+        exit 2
+    fi
+
+    run
+
+    if cmp -s "$output" "$correct"; then
+        echo_info "Output is correct"
+    else
+        echo_warn "Output is not correct"
+        exit 3
+    fi
+}
+
+function commit {
+    check
+
+    git reset
+    git add "$input" "$correct" "$folder"
+    git commit -m "Solution $pretty"
+}
+
+function local_find {
+    find "$1" -mindepth 1 -maxdepth 1 -regextype egrep "${@:2}"
+}
+
+command="${1}"
+year="${2}"
+day="${3}"
+part="${4}"
+solution="${5}"
+base=$(pwd)
+
+if [ ! $command ]; then
+    print_usage
+    exit 1
+fi
+
+if [ ! $year ]; then
+    year=$( local_find "$base" -regex '.*/[0-9]{4}' -exec basename {} ';' | sort -r | head -n 1)
+
+    if [ ! $year ]; then
+        echo_err "No year could be found"
+        exit 1
+    fi
+
+    echo_info "No year specified; defaulting to $year"
+fi
+
+if [ ! $day ]; then
+    day=$( local_find "$base/$year" -regex '.*/[0-9]{1,2}' -exec basename {} ';' | sort -r | head -n 1 )
+
+    if [ ! $day ]; then
+        echo_err "No day found in $year"
+        exit 1
+    fi
+
+    echo_info "No day specified; defaulting to $day"
+fi
+
+if [ ! $part ]; then
+    part=$( local_find "$base/$year/$day" -regex '.*/[1-2]' -exec basename {} ';' | sort -r | head -n 1 )
+
+    if [ ! $part ]; then
+        echo_err "No part found in $year/$day"
+        exit 1
+    fi
+
+    echo_info "No part specified; defaulting to $part"
+fi
+
+if [ ! $solution ]; then
+    solution=$( local_find "$base/$year/$day/$part" -not -name 'correct' -exec basename {} ';' | sort -r | head -n 1 )
+
+    if [ ! $solution ]; then
+        echo_err "No solution found in $year/$day/$part"
+        exit 1
+    fi
+
+    echo_info "No solution specified; defaulting to $solution"
+fi
+
+folder="$base/$year/$day/$part/$solution"
+executable="$folder/run"
+output="$folder/output"
+input="$base/$year/$day/input"
+correct="$base/$year/$day/$part/correct"
+pretty="$solution for $year puzzle $day-$part"
+
+if [ $command == "run" ]; then
+    run
+elif [ $command == "check" ]; then
+    check
+elif [ $command == "commit" ]; then
+    commit
+else
+    echo_err "Unrecognized command '$command'"
+    exit 1
+fi
+
