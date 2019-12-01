@@ -1,0 +1,22 @@
+#! /usr/bin/env python3
+
+import sys
+
+data = sys.stdin.read()
+
+level = 0
+for index, command in enumerate(data):
+    print(f"Step {index} at {level}", file=sys.stderr)
+
+    if command == "(":
+        level += 1
+    elif command == ")":
+        level -= 1
+    else:
+        print("Error")
+        break
+
+    if level < 0:
+        # +1 because Python is 0-indexed but the solution is 1-indexed
+        print(index + 1)
+        break
