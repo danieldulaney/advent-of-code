@@ -1,0 +1,150 @@
+#! /usr/bin/env python3
+
+import sys, re
+from collections import deque
+
+def int_or_string(item):
+    try:
+        return int(item)
+    except:
+        return item
+
+
+class WireVM:
+    def __init__(self):
+        self.wire_values = {}
+        self.command_queue = deque()
+        self.misses = 0
+
+    def wire(self, name):
+        if isinstance(name, int):
+            return name
+
+        return self.wire_values.get(name)
+
+    def queue_command(self, command):
+        self.misses += 1
+        self.command_queue.appendleft(command)
+
+    def set_wire(self, wire, value):
+        self.misses = 0
+        self.wire_values[wire] = value
+
+    def parse_command(line):
+        command = {}
+
+        match = re.match(r'(\w+) (\w+) (\w+) -> (\w+)', line)
+        if match:
+            command['left'] = int_or_string(match[1])
+            command['type'] = match[2]
+            command['right'] = int_or_string(match[3])
+            command['out'] = match[4]
+            return command
+
+        match = re.match(r'NOT (\w+) -> (\w+)', line)
+        if match:
+            command['type'] = 'NOT'
+            command['in'] = int_or_string(match[1])
+            command['out'] = match[2]
+            return command
+
+        match = re.match(r'(\w+) -> (\w+)', line)
+        if match:
+            command['type'] = 'IS'
+            command['in'] = int_or_string(match[1])
+            command['out'] = int_or_string(match[2])
+            return command
+
+        print('Unknown command:', line)
+        sys.exit()
+
+    def run_queued_commands(self):
+
+        while len(self.command_queue) > 0:
+            command = self.command_queue.pop()
+            self.run_command(command)
+
+    def run_command(self, command):
+
+        if command['type'] == 'IS':
+            in_value = self.wire(command['in'])
+
+            if in_value is None:
+                self.queue_command(command)
+            else:
+                self.set_wire(command['out'], in_value)
+
+        elif command['type'] == 'NOT':
+            in_value = self.wire(command['in'])
+
+            if in_value is None:
+                self.queue_command(command)
+            else:
+                self.set_wire(command['out'], ~ in_value)
+
+        elif command['type'] == 'AND':
+            left = self.wire(command['left'])
+            right = self.wire(command['right'])
+
+            if left is None or right is None:
+                self.queue_command(command)
+            else:
+                self.set_wire(command['out'], left & right)
+
+        elif command['type'] == 'OR':
+            left = self.wire(command['left'])
+            right = self.wire(command['right'])
+
+            if left is None or right is None:
+                self.queue_command(command)
+            else:
+                self.set_wire(command['out'], left | right)
+
+        elif command['type'] == 'RSHIFT':
+            left = self.wire(command['left'])
+            right = self.wire(command['right'])
+
+            if left is None or right is None:
+                self.queue_command(command)
+            else:
+                self.set_wire(command['out'], left >> right)
+
+        elif command['type'] == 'LSHIFT':
+            left = self.wire(command['left'])
+            right = self.wire(command['right'])
+
+            if left is None or right is None:
+                self.queue_command(command)
+            else:
+                self.set_wire(command['out'], left << right)
+
+        else:
+            print('Unknown command type', command['type'])
+            sys.exit()
+
+        print('After', command, len(self.command_queue), 'commands are queued', file=sys.stderr)
+
+commands = []
+for line in sys.stdin:
+    if len(line.strip()) == 0:
+        continue
+
+    commands.append(WireVM.parse_command(line))
+
+vm1 = WireVM()
+for command in commands:
+    vm1.run_command(command)
+vm1.run_queued_commands()
+
+wire_a = vm1.wire('a')
+
+vm2 = WireVM()
+for command in commands:
+    if command['type'] == 'IS' and command['out'] == 'b':
+        command = command.copy()
+        command['in'] = wire_a
+
+    vm2.run_command(command)
+vm2.run_queued_commands()
+
+print(vm2.wire('a'))
