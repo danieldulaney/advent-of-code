@@ -1,0 +1,41 @@
+#! /usr/bin/env python3
+
+import sys
+
+def intcode_step(program, pc):
+    opcode = program[pc]
+    in1_pos = program[pc + 1]
+    in2_pos = program[pc + 2]
+    out_pos = program[pc + 3]
+
+    if opcode == 1:
+        program[out_pos] = program[in1_pos] + program[in2_pos]
+    elif opcode == 2:
+        program[out_pos] = program[in1_pos] * program[in2_pos]
+    elif opcode == 99:
+        return False
+    else:
+        print(f"Error: Invalid opcode {opcode} at position {pc}")
+        sys.exit()
+
+    return True
+
+data = list(int(item) for item in sys.stdin.read().split(","))
+
+
+for noun in range(0, 100):
+    for verb in range(0, 100):
+        print(f"Trying {noun}, {verb}", file=sys.stderr)
+
+        program = list(data)
+
+        program[1] = noun
+        program[2] = verb
+
+        pc = 0
+        while intcode_step(program, pc):
+            pc += 4
+
+        if program[0] == 19690720:
+            print(noun * 100 + verb)
+            sys.exit()
