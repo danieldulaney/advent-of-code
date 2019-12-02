@@ -1,0 +1,14 @@
+#! /usr/bin/env bash
+
+pushd $(dirname "$0") > /dev/null
+
+if ! cargo test 1>&2; then
+    echo "Failed tests"
+    popd > /dev/null
+fi
+
+executable=$(cargo build --message-format=json | tail -n 1 | jq -r '.executable')
+
+"$executable" < /dev/stdin > /dev/stdout
+
+popd > /dev/null
