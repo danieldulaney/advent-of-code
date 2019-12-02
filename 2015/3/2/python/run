@@ -1,0 +1,39 @@
+#! /usr/bin/env python3
+
+import sys
+
+data=sys.stdin.read()
+
+current = (0, 0)
+robo_current = (0, 0)
+robo = False
+visited = set()
+visited.add(current)
+
+def next_location(current, command):
+    if command == "^":
+        return (current[0] + 1, current[1])
+    elif command == "v":
+        return (current[0] - 1, current[1])
+    elif command == ">":
+        return (current[0], current[1] + 1)
+    elif command == "<":
+        return (current[0], current[1] - 1)
+    else:
+        print(f"Error: bad command {command}")
+        sys.exit()
+
+for command in data:
+
+    if robo:
+        print(f"At {robo_current}, moving {command}", file=sys.stderr)
+        robo_current = next_location(robo_current, command)
+        visited.add(robo_current)
+    else:
+        print(f"At {current}, moving {command}", file=sys.stderr)
+        current = next_location(current, command)
+        visited.add(current)
+
+    robo = not robo
+
+print(len(visited))
