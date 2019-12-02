@@ -1,0 +1,28 @@
+#! /usr/bin/env python3
+
+import sys
+
+data=sys.stdin.read()
+
+current = (0, 0)
+visited = set()
+visited.add(current)
+
+for command in data:
+    print(f"At {current}, moving {command}", file=sys.stderr)
+
+    if command == "^":
+        current = (current[0] + 1, current[1])
+    elif command == "v":
+        current = (current[0] - 1, current[1])
+    elif command == ">":
+        current = (current[0], current[1] + 1)
+    elif command == "<":
+        current = (current[0], current[1] - 1)
+    else:
+        print(f"Error: bad command {command}")
+        sys.exit()
+
+    visited.add(current)
+
+print(len(visited))
