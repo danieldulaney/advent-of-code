@@ -1,0 +1,14 @@
+#! /usr/bin/env python3
+
+import sys, re
+
+def paper_needed(dims):
+    sides = (dims[0] * dims[1], dims[1] * dims[2], dims[2] * dims[0])
+
+    return min(sides) + 2 * sum(sides)
+
+def parse_dims(line):
+    matches = re.match(r"(\d+)x(\d+)x(\d+)", line)
+    return (int(matches[1]), int(matches[2]), int(matches[3]))
+
+print(sum(paper_needed(parse_dims(line)) for line in sys.stdin))
