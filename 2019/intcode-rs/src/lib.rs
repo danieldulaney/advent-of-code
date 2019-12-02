@@ -16,6 +16,8 @@ pub enum ExecutionError {
 type Result<T> = std::result::Result<T, ExecutionError>;
 
 impl IntcodeVM {
+
+    /// Create a new VM from some existing memory
     pub fn new<D: Into<Vec<i64>>>(data: D) -> Self {
         Self {
             memory: data.into(),
@@ -24,11 +26,30 @@ impl IntcodeVM {
         }
     }
 
+    /// Read a comma-separated list of integers from `stdin` and make it into a VM
+    pub fn from_stdin() -> std::io::Result<Self> {
+        use std::io::prelude::*;
+
+        let mut buffer = String::new();
+        std::io::stdin().read_to_string(&mut buffer)?;
+
+        let mut data = Vec::new();
+
+        for item in buffer.split(',') {
+            let num: i64 = item.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)))?;
+            data.push(num)
+        }
+
+        Ok(Self::new(data))
+    }
+
+    /// Get the opcode pointed to by the current PC
     pub fn current_opcode(&self) -> Result<i64> {
         self.get_memory(self.pc)
             .map_err(|_| ExecutionError::InvalidPC)
     }
 
+    /// Get the value of memory at a given index
     pub fn get_memory(&self, index: usize) -> Result<i64> {
         self.memory
             .get(index)
@@ -36,6 +57,7 @@ impl IntcodeVM {
             .ok_or(ExecutionError::InvalidPC)
     }
 
+    /// Set the value of memory at a given index
     pub fn set_memory(&mut self, index: usize, value: i64) -> Result<()> {
         self.memory
             .get_mut(index)
@@ -43,18 +65,27 @@ impl IntcodeVM {
             .ok_or(ExecutionError::InvalidAddress)
     }
 
+    /// Get the value at the memory location pointed to by the value at the given index
     pub fn get_memory_by_pointer(&self, index: usize) -> Result<i64> {
         self.get_memory(Self::value_to_index(self.get_memory(index)?)?)
     }
 
+    /// Set the value at the memory location pointed to by the value at the given index
     pub fn set_memory_by_pointer(&mut self, index: usize, value: i64) -> Result<()> {
         self.set_memory(Self::value_to_index(self.get_memory(index)?)?, value)
     }
 
+    /// Get the entire memory as a slice
     pub fn memory(&self) -> &[i64] {
         &self.memory
     }
 
+    /// Take a single step through the program
+    ///
+    /// Returns true if the program can continue, or false if the program should
+    /// halt.
+    ///
+    /// If called again on an already halted program, returns `Err(AlreadyHalted)`.
     pub fn step(&mut self) -> Result<bool> {
         let opcode = self.current_opcode()?;
 
@@ -78,12 +109,14 @@ impl IntcodeVM {
         Ok(!self.halted)
     }
 
+    /// Run the program until it halts
     pub fn run_to_end(&mut self) -> Result<()> {
         while self.step()? {}
 
         Ok(())
     }
 
+    /// Check if the VM has halted
     pub fn halted(&self) -> bool {
         self.halted
     }
