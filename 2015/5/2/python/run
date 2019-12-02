@@ -1,0 +1,36 @@
+#! /usr/bin/env python3
+
+import sys, itertools
+
+def is_nice(string):
+
+    double_pairs = False
+    seen_pairs = set()
+    prev_pair = None
+    for index in range(len(string) - 1):
+        pair = string[index] + string[index + 1]
+
+        if pair in seen_pairs:
+            double_pairs = True
+            break
+
+        seen_pairs.add(prev_pair)
+        prev_pair = pair
+
+    if not double_pairs:
+        print(string, "doesn't have double pairs", file=sys.stderr)
+        return False
+
+    spaced_pair = False
+    for index in range(len(string) - 2):
+        if string[index] == string[index + 2]:
+            spaced_pair = True
+
+    if not spaced_pair:
+        print(string, "doesn't have spaced pair", file=sys.stderr)
+        return False
+
+    print(string, "is nice", file=sys.stderr)
+    return True
+
+print(len(list(line for line in sys.stdin if is_nice(line.strip()))))
