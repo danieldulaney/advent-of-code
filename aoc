@@ -4,6 +4,10 @@ function echo_info {
     echo "$@"
 }
 
+function echo_warn {
+    echo "$@"
+}
+
 function echo_err {
     echo "$@"
 }
