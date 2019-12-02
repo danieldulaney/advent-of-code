@@ -1,0 +1,27 @@
+#! /usr/bin/env python3
+
+import sys, itertools
+
+def is_nice(string):
+    if len(list(letter for letter in string if letter in "aeiou")) < 3:
+        print(string, "has under 3 vowels", file=sys.stderr)
+        return False
+
+    has_double = False
+    for index in range(len(string) - 1):
+        if string[index] == string[index + 1]:
+            has_double = True
+            break
+
+    if not has_double:
+        print(string, "doesn't have a double", file=sys.stderr)
+        return False
+
+    if "ab" in string or "cd" in string or "pq" in string or "xy" in string:
+        print(string, "has a naughty sequence", file=sys.stderr)
+        return False
+
+    print(string, "is nice", file=sys.stderr)
+    return True
+
+print(len(list(line for line in sys.stdin if is_nice(line.strip()))))
