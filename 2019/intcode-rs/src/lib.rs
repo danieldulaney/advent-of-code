@@ -35,7 +35,7 @@ impl IntcodeVM {
 
         let mut data = Vec::new();
 
-        for item in buffer.split(',') {
+        for item in buffer.trim().split(',') {
             let num: i64 = item.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)))?;
             data.push(num)
         }
