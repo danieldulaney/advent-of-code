@@ -1,0 +1,47 @@
+#! /usr/bin/env python3
+
+import sys
+from pprint import pprint
+
+class Wire:
+
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.points = set()
+
+    def add_current_point(self):
+        self.points.add((self.x, self.y))
+
+    def run(self, instr):
+        direction = instr[0]
+        distance = int(instr[1:])
+
+        for _ in range(distance):
+            if direction == 'R':
+                self.x += 1
+            elif direction == 'L':
+                self.x -= 1
+            elif direction == 'U':
+                self.y += 1
+            elif direction == 'D':
+                self.y -= 1
+            else:
+                raise Exception("Unknown direction " + direction)
+
+            self.add_current_point()
+
+wires = [line.strip().split(',') for line in sys.stdin.readlines()]
+
+wire0 = Wire()
+wire1 = Wire()
+
+for instr in wires[0]:
+    wire0.run(instr)
+
+for instr in wires[1]:
+    wire1.run(instr)
+
+intersections = wire0.points.intersection(wire1.points)
+
+print(min(abs(x) + abs(y) for (x, y) in intersections))
