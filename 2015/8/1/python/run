@@ -1,0 +1,17 @@
+#! /usr/bin/env python3
+
+import sys
+
+total_chars = 0
+data_chars = 0
+for line in sys.stdin:#['""', '"abc"', r'"aaa\"aaa"', r'"\x27"']:
+    line = line.strip()
+
+    print(line, len(line), len(eval(line)), file=sys.stderr)
+
+    total_chars += len(line)
+    data_chars += len(eval(line))
+
+print('Total', total_chars, file=sys.stderr)
+print('Data', data_chars, file=sys.stderr)
+print(total_chars - data_chars)
