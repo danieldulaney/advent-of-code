@@ -1,0 +1,31 @@
+#! /usr/bin/env python3
+
+import sys
+
+def next(seq):
+    index = 0
+    result = []
+
+    while index < len(seq):
+        current = seq[index]
+        count = 0
+
+        while index < len(seq) and current == seq[index]:
+            index += 1
+            count += 1
+
+        result.append(count)
+        result.append(current)
+
+        #print(seq, index, result, file=sys.stderr)
+
+
+    return result
+
+
+seq = [int(c) for c in sys.stdin.read().strip()]
+
+for _ in range(40):
+    seq = next(seq)
+
+print(len(seq))
