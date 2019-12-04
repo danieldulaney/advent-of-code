@@ -1,0 +1,58 @@
+#! /usr/bin/env python3
+
+import sys
+
+def next_password(current):
+    for i in range(len(current) - 1, -1, -1):
+        current[i] += 1
+
+        if current[i] > (ord('z') - ord('a')):
+            current[i] = 0
+        else:
+            break
+
+    return current
+
+def str_pwd(pwd):
+    return ''.join(chr(v + ord('a')) for v in pwd)
+
+def is_valid_password(pwd):
+
+    if ord('i')-ord('a') in pwd or ord('o')-ord('a') in pwd or ord('l')-ord('a') in pwd:
+        print(str_pwd(pwd), "Invalid letter", file=sys.stderr)
+        return False
+
+    has_run = False
+    for i in range(len(pwd) - 2):
+        if pwd[i + 2] - 2 == pwd[i] and pwd[i + 1] - 1 == pwd[i]:
+            has_run = True
+    if not has_run:
+        print(str_pwd(pwd), "No run", file=sys.stderr)
+        return False
+
+    i = 0
+    doubles = 0
+    while i < len(pwd) - 1:
+        if pwd[i] == pwd[i + 1]:
+            i += 1
+            doubles += 1
+        if doubles >= 2:
+            break
+        i += 1
+    if doubles < 2:
+        print(str_pwd(pwd), "Only", doubles, "doubles", file=sys.stderr)
+        return False
+
+    return True
+
+current = [ord(c) - ord('a') for c in sys.stdin.read().strip()]
+
+while not is_valid_password(current):
+    current = next_password(current)
+
+current = next_password(current)
+
+while not is_valid_password(current):
+    current = next_password(current)
+
+print(str_pwd(current))
