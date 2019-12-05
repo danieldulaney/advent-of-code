@@ -48,6 +48,10 @@ pub enum Opcode {
     Multiply(ParameterMode, ParameterMode, ParameterMode),
     Input(ParameterMode),
     Output(ParameterMode),
+    JumpIfTrue(ParameterMode, ParameterMode),
+    JumpIfFalse(ParameterMode, ParameterMode),
+    LessThan(ParameterMode, ParameterMode, ParameterMode),
+    Equals(ParameterMode, ParameterMode, ParameterMode),
     Halt,
 }
 
@@ -70,6 +74,24 @@ impl Opcode {
             )),
             3 => Ok(Self::Input(ParameterMode::from_opcode(raw, 0)?)),
             4 => Ok(Self::Output(ParameterMode::from_opcode(raw, 0)?)),
+            5 => Ok(Self::JumpIfTrue(
+                ParameterMode::from_opcode(raw, 0)?,
+                ParameterMode::from_opcode(raw, 1)?,
+            )),
+            6 => Ok(Self::JumpIfFalse(
+                ParameterMode::from_opcode(raw, 0)?,
+                ParameterMode::from_opcode(raw, 1)?,
+            )),
+            7 => Ok(Self::LessThan(
+                ParameterMode::from_opcode(raw, 0)?,
+                ParameterMode::from_opcode(raw, 1)?,
+                ParameterMode::from_opcode(raw, 2)?,
+            )),
+            8 => Ok(Self::Equals(
+                ParameterMode::from_opcode(raw, 0)?,
+                ParameterMode::from_opcode(raw, 1)?,
+                ParameterMode::from_opcode(raw, 2)?,
+            )),
             99 => Ok(Self::Halt),
             unknown => Err(ExecutionError::UnknownOpcode(unknown)),
         }
@@ -195,25 +217,61 @@ impl IntcodeVM {
                 let val2 = self.get_parameter(in2, 2)?;
                 let result = val1 + val2;
                 self.set_parameter(out, 3, result)?;
+                self.pc_advance(&opcode);
             }
             &Opcode::Multiply(in1, in2, out) => {
                 let val1 = self.get_parameter(in1, 1)?;
                 let val2 = self.get_parameter(in2, 2)?;
                 let result = val1 * val2;
                 self.set_parameter(out, 3, result)?;
+                self.pc_advance(&opcode);
             }
             &Opcode::Input(out) => {
                 let val = self.input.pop_front().ok_or(ExecutionError::NeedsInput)?;
                 self.set_parameter(out, 1, val)?;
+                self.pc_advance(&opcode);
             }
             &Opcode::Output(in1) => {
                 let val = self.get_parameter(in1, 1)?;
                 self.output.push_back(val);
+                self.pc_advance(&opcode);
+            }
+            &Opcode::JumpIfTrue(in1, in2) => {
+                let val = self.get_parameter(in1, 1)?;
+                let new_loc = self.get_parameter(in2, 2)?;
+
+                if val != 0 {
+                    self.pc = Self::value_to_index(new_loc)?;
+                } else {
+                    self.pc_advance(&opcode);
+                }
+            }
+            &Opcode::JumpIfFalse(in1, in2) => {
+                let val = self.get_parameter(in1, 1)?;
+                let new_loc = self.get_parameter(in2, 2)?;
+
+                if val == 0 {
+                    self.pc = Self::value_to_index(new_loc)?;
+                } else {
+                    self.pc_advance(&opcode);
+                }
+            }
+            &Opcode::LessThan(in1, in2, out) => {
+                let val1 = self.get_parameter(in1, 1)?;
+                let val2 = self.get_parameter(in2, 2)?;
+                let result = if val1 < val2 { 1 } else { 0 };
+                self.set_parameter(out, 3, result)?;
+                self.pc_advance(&opcode);
+            }
+            &Opcode::Equals(in1, in2, out) => {
+                let val1 = self.get_parameter(in1, 1)?;
+                let val2 = self.get_parameter(in2, 2)?;
+                let result = if val1 == val2 { 1 } else { 0 };
+                self.set_parameter(out, 3, result)?;
+                self.pc_advance(&opcode);
             }
             &Opcode::Halt => self.halted = true,
         };
-
-        self.pc += Self::pc_advance(opcode);
 
         Ok(!self.halted)
     }
@@ -230,16 +288,22 @@ impl IntcodeVM {
         self.halted
     }
 
-    fn pc_advance(opcode: Opcode) -> usize {
+    fn pc_advance(&mut self, opcode: &Opcode) {
         use Opcode::*;
 
-        match opcode {
+        let advance = match opcode {
             Add(..) => 4,
             Multiply(..) => 4,
             Input(..) => 2,
             Output(..) => 2,
+            JumpIfTrue(..) => 3,
+            JumpIfFalse(..) => 3,
+            LessThan(..) => 4,
+            Equals(..) => 4,
             Halt => 1,
-        }
+        };
+
+        self.pc += advance;
     }
 
     fn value_to_index(value: i64) -> Result<usize> {
@@ -294,6 +358,16 @@ mod test {
         );
         assert_eq!(Opcode::from_raw(3), Ok(Input(Position)));
         assert_eq!(Opcode::from_raw(4), Ok(Output(Position)));
+        assert_eq!(Opcode::from_raw(5), Ok(JumpIfTrue(Position, Position)));
+        assert_eq!(Opcode::from_raw(6), Ok(JumpIfFalse(Position, Position)));
+        assert_eq!(
+            Opcode::from_raw(7),
+            Ok(LessThan(Position, Position, Position))
+        );
+        assert_eq!(
+            Opcode::from_raw(8),
+            Ok(Equals(Position, Position, Position))
+        );
         assert_eq!(Opcode::from_raw(99), Ok(Halt));
 
         assert_eq!(
@@ -307,7 +381,7 @@ mod test {
 
         assert_eq!(Opcode::from_raw(2101), Err(ExecutionError::UnknownMode(2)));
 
-        for opcode in 5..98 {
+        for opcode in 9..98 {
             assert_eq!(
                 Opcode::from_raw(opcode),
                 Err(ExecutionError::UnknownOpcode(opcode))
@@ -413,5 +487,138 @@ mod test {
         assert_eq!(vm2.memory(), &[2, 3, 0, 6, 99]);
         assert_eq!(vm3.memory(), &[2, 4, 4, 5, 99, 9801]);
         assert_eq!(vm4.memory(), &[30, 1, 1, 4, 2, 5, 6, 0, 99]);
+    }
+
+    #[test]
+    fn given_examples_day5_2_comp() {
+        let eq_p = IntcodeVM::new(vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8]);
+        let eq_i = IntcodeVM::new(vec![3, 3, 1108, -1, 8, 3, 4, 3, 99]);
+        let lt_p = IntcodeVM::new(vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8]);
+        let lt_i = IntcodeVM::new(vec![3, 3, 1107, -1, 8, 3, 4, 3, 99]);
+
+        {
+            let mut eq_p_7 = eq_p.clone();
+            eq_p_7.push_input(7);
+            eq_p_7.run_to_end().unwrap();
+            assert_eq!(eq_p_7.pop_output(), Some(0));
+
+            let mut eq_p_8 = eq_p.clone();
+            eq_p_8.push_input(8);
+            eq_p_8.run_to_end().unwrap();
+            assert_eq!(eq_p_8.pop_output(), Some(1));
+
+            let mut eq_p_9 = eq_p.clone();
+            eq_p_9.push_input(9);
+            eq_p_9.run_to_end().unwrap();
+            assert_eq!(eq_p_9.pop_output(), Some(0));
+        }
+
+        {
+            let mut lt_i_7 = lt_i.clone();
+            lt_i_7.push_input(7);
+            lt_i_7.run_to_end().unwrap();
+            assert_eq!(lt_i_7.pop_output(), Some(1));
+
+            let mut lt_i_8 = lt_i.clone();
+            lt_i_8.push_input(8);
+            lt_i_8.run_to_end().unwrap();
+            assert_eq!(lt_i_8.pop_output(), Some(0));
+
+            let mut lt_i_9 = lt_i.clone();
+            lt_i_9.push_input(9);
+            lt_i_9.run_to_end().unwrap();
+            assert_eq!(lt_i_9.pop_output(), Some(0));
+        }
+
+        {
+            let mut lt_p_7 = lt_p.clone();
+            lt_p_7.push_input(7);
+            lt_p_7.run_to_end().unwrap();
+            assert_eq!(lt_p_7.pop_output(), Some(1));
+
+            let mut lt_p_8 = lt_p.clone();
+            lt_p_8.push_input(8);
+            lt_p_8.run_to_end().unwrap();
+            assert_eq!(lt_p_8.pop_output(), Some(0));
+
+            let mut lt_p_9 = lt_p.clone();
+            lt_p_9.push_input(9);
+            lt_p_9.run_to_end().unwrap();
+            assert_eq!(lt_p_9.pop_output(), Some(0));
+        }
+
+        {
+            let mut eq_i_7 = eq_i.clone();
+            eq_i_7.push_input(7);
+            eq_i_7.run_to_end().unwrap();
+            assert_eq!(eq_i_7.pop_output(), Some(0));
+
+            let mut eq_i_8 = eq_i.clone();
+            eq_i_8.push_input(8);
+            eq_i_8.run_to_end().unwrap();
+            assert_eq!(eq_i_8.pop_output(), Some(1));
+
+            let mut eq_i_9 = eq_i.clone();
+            eq_i_9.push_input(9);
+            eq_i_9.run_to_end().unwrap();
+            assert_eq!(eq_i_9.pop_output(), Some(0));
+        }
+    }
+
+    #[test]
+    fn test_given_examples_day5_2_jump() {
+        let pos = IntcodeVM::new(vec![
+            3, 12, // Input to position 12
+            6, 12, 15, // If position 12 is 0, jump to the position in slot 15 (9)
+            1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9,
+        ]);
+        let imm = IntcodeVM::new(vec![3, 3, 1105, -1, 9, 1101, 0, 0, 12, 4, 12, 99, 1]);
+
+        let big = IntcodeVM::new(vec![
+            3, 21, 1008, 21, 8, 20, 1005, 20, 22, 107, 8, 21, 20, 1006, 20, 31, 1106, 0, 36, 98, 0,
+            0, 1002, 21, 125, 20, 4, 20, 1105, 1, 46, 104, 999, 1105, 1, 46, 1101, 1000, 1, 20, 4,
+            20, 1105, 1, 46, 98, 99,
+        ]);
+
+        {
+            let mut pos_0 = pos.clone();
+            pos_0.push_input(0);
+            pos_0.run_to_end().unwrap();
+            assert_eq!(pos_0.pop_output(), Some(0));
+
+            let mut pos_10 = pos.clone();
+            pos_10.push_input(10);
+            pos_10.run_to_end().unwrap();
+            assert_eq!(pos_10.pop_output(), Some(1));
+        }
+
+        {
+            let mut imm_0 = imm.clone();
+            imm_0.push_input(0);
+            imm_0.run_to_end().unwrap();
+            assert_eq!(imm_0.pop_output(), Some(0));
+
+            let mut imm_10 = imm.clone();
+            imm_10.push_input(10);
+            imm_10.run_to_end().unwrap();
+            assert_eq!(imm_10.pop_output(), Some(1));
+        }
+
+        {
+            let mut big_7 = big.clone();
+            big_7.push_input(7);
+            big_7.run_to_end().unwrap();
+            assert_eq!(big_7.pop_output(), Some(999));
+
+            let mut big_8 = big.clone();
+            big_8.push_input(8);
+            big_8.run_to_end().unwrap();
+            assert_eq!(big_8.pop_output(), Some(1000));
+
+            let mut big_9 = big.clone();
+            big_9.push_input(9);
+            big_9.run_to_end().unwrap();
+            assert_eq!(big_9.pop_output(), Some(1001));
+        }
     }
 }
