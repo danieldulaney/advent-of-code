@@ -1,12 +1,10 @@
 [package]
 name = "intcode"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Daniel Dulaney <dan@dulaney.xyz>"]
 edition = "2018"
 license = "MIT"
 description = "An implementation of the Intcode VM from Advent of Code 2019"
 repository = "https://github.com/danieldulaney/advent-of-code"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

@@ -1,8 +1,12 @@
+use std::collections::VecDeque;
+
 #[derive(Debug, Clone)]
 pub struct IntcodeVM {
     memory: Vec<i64>,
     pc: usize,
     halted: bool,
+    input: VecDeque<i64>,
+    output: VecDeque<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,19 +14,77 @@ pub enum ExecutionError {
     InvalidPC,
     InvalidAddress,
     AlreadyHalted,
-    UnknownOpcode,
+    NeedsInput,
+    ImmediateModeWrite,
+    UnknownOpcode(i64),
+    UnknownMode(u8),
 }
 
 type Result<T> = std::result::Result<T, ExecutionError>;
 
-impl IntcodeVM {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ParameterMode {
+    Position,
+    Immediate,
+}
 
+impl ParameterMode {
+    pub fn from_opcode(opcode: i64, parameter_index: u32) -> Result<Self> {
+        let place_value = 10i64.pow(parameter_index + 2);
+
+        let mode_value = ((opcode / place_value) % 10) as u8;
+
+        match mode_value {
+            0 => Ok(ParameterMode::Position),
+            1 => Ok(ParameterMode::Immediate),
+            unknown => Err(ExecutionError::UnknownMode(unknown)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Opcode {
+    Add(ParameterMode, ParameterMode, ParameterMode),
+    Multiply(ParameterMode, ParameterMode, ParameterMode),
+    Input(ParameterMode),
+    Output(ParameterMode),
+    Halt,
+}
+
+impl Opcode {
+    /// Attempt to parse an opcode from a raw value
+    ///
+    /// Invalid parameter modes (for example, immediate mode for an output) will
+    /// *not* return `Err`, but may cause an error when run.
+    pub fn from_raw(raw: i64) -> Result<Self> {
+        match raw % 100 {
+            1 => Ok(Self::Add(
+                ParameterMode::from_opcode(raw, 0)?,
+                ParameterMode::from_opcode(raw, 1)?,
+                ParameterMode::from_opcode(raw, 2)?,
+            )),
+            2 => Ok(Self::Multiply(
+                ParameterMode::from_opcode(raw, 0)?,
+                ParameterMode::from_opcode(raw, 1)?,
+                ParameterMode::from_opcode(raw, 2)?,
+            )),
+            3 => Ok(Self::Input(ParameterMode::from_opcode(raw, 0)?)),
+            4 => Ok(Self::Output(ParameterMode::from_opcode(raw, 0)?)),
+            99 => Ok(Self::Halt),
+            unknown => Err(ExecutionError::UnknownOpcode(unknown)),
+        }
+    }
+}
+
+impl IntcodeVM {
     /// Create a new VM from some existing memory
     pub fn new<D: Into<Vec<i64>>>(data: D) -> Self {
         Self {
             memory: data.into(),
             pc: 0,
             halted: false,
+            input: VecDeque::new(),
+            output: VecDeque::new(),
         }
     }
 
@@ -36,15 +98,32 @@ impl IntcodeVM {
         let mut data = Vec::new();
 
         for item in buffer.trim().split(',') {
-            let num: i64 = item.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)))?;
+            let num: i64 = item
+                .parse()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, Box::new(e)))?;
             data.push(num)
         }
 
         Ok(Self::new(data))
     }
 
-    /// Get the opcode pointed to by the current PC
-    pub fn current_opcode(&self) -> Result<i64> {
+    /// Add a single input value to the end of the input queue
+    pub fn push_input(&mut self, input: i64) {
+        self.input.push_back(input)
+    }
+
+    /// Add input values from an interator to the end of the input queue
+    pub fn push_inputs<I: IntoIterator<Item = i64>>(&mut self, input: I) {
+        self.input.extend(input)
+    }
+
+    /// Pop values off the front of the output queue
+    pub fn pop_output(&mut self) -> Option<i64> {
+        self.output.pop_front()
+    }
+
+    /// Get the raw opcode value pointed to by the current PC
+    pub fn current_raw_opcode(&self) -> Result<i64> {
         self.get_memory(self.pc)
             .map_err(|_| ExecutionError::InvalidPC)
     }
@@ -75,6 +154,22 @@ impl IntcodeVM {
         self.set_memory(Self::value_to_index(self.get_memory(index)?)?, value)
     }
 
+    /// Get the parameter based on the given value and the mode
+    pub fn get_parameter(&mut self, mode: ParameterMode, offset: usize) -> Result<i64> {
+        match mode {
+            ParameterMode::Immediate => self.get_memory(self.pc + offset),
+            ParameterMode::Position => self.get_memory_by_pointer(self.pc + offset),
+        }
+    }
+
+    /// Set the parameter based on the given value and the mode
+    pub fn set_parameter(&mut self, mode: ParameterMode, offset: usize, value: i64) -> Result<()> {
+        match mode {
+            ParameterMode::Immediate => Err(ExecutionError::ImmediateModeWrite),
+            ParameterMode::Position => self.set_memory_by_pointer(self.pc + offset, value),
+        }
+    }
+
     /// Get the entire memory as a slice
     pub fn memory(&self) -> &[i64] {
         &self.memory
@@ -87,21 +182,30 @@ impl IntcodeVM {
     ///
     /// If called again on an already halted program, returns `Err(AlreadyHalted)`.
     pub fn step(&mut self) -> Result<bool> {
-        let opcode = self.current_opcode()?;
+        let opcode = Opcode::from_raw(self.current_raw_opcode()?)?;
 
-        match self.current_opcode()? {
-            1 => self.set_memory_by_pointer(
-                self.pc + 3,
-                self.get_memory_by_pointer(self.pc + 1)?
-                    + self.get_memory_by_pointer(self.pc + 2)?,
-            )?,
-            2 => self.set_memory_by_pointer(
-                self.pc + 3,
-                self.get_memory_by_pointer(self.pc + 1)?
-                    * self.get_memory_by_pointer(self.pc + 2)?,
-            )?,
-            99 => self.halted = true,
-            _ => return Err(ExecutionError::UnknownOpcode),
+        match &opcode {
+            &Opcode::Add(in1, in2, out) => {
+                let val1 = self.get_parameter(in1, 1)?;
+                let val2 = self.get_parameter(in2, 2)?;
+                let result = val1 + val2;
+                self.set_parameter(out, 3, result)?;
+            }
+            &Opcode::Multiply(in1, in2, out) => {
+                let val1 = self.get_parameter(in1, 1)?;
+                let val2 = self.get_parameter(in2, 2)?;
+                let result = val1 * val2;
+                self.set_parameter(out, 3, result)?;
+            }
+            &Opcode::Input(out) => {
+                let val = self.input.pop_front().ok_or(ExecutionError::NeedsInput)?;
+                self.set_parameter(out, 1, val)?;
+            }
+            &Opcode::Output(in1) => {
+                let val = self.get_parameter(in1, 1)?;
+                self.output.push_back(val);
+            }
+            &Opcode::Halt => self.halted = true,
         };
 
         self.pc += Self::pc_advance(opcode);
@@ -121,12 +225,15 @@ impl IntcodeVM {
         self.halted
     }
 
-    fn pc_advance(opcode: i64) -> usize {
+    fn pc_advance(opcode: Opcode) -> usize {
+        use Opcode::*;
+
         match opcode {
-            1 => 4,
-            2 => 4,
-            99 => 1,
-            _ => panic!("Invalid opcode passed to pc_advance -- this shouldn't ever happen"),
+            Add(..) => 4,
+            Multiply(..) => 4,
+            Input(..) => 2,
+            Output(..) => 2,
+            Halt => 1,
         }
     }
 
@@ -142,29 +249,125 @@ mod test {
     use super::*;
 
     #[test]
-    fn mess_with_memory() {
-        let mut vm = IntcodeVM::new(vec![1, 2, 3, 4, 5]);
+    fn parse_parameter_mode() {
+        assert_eq!(
+            ParameterMode::from_opcode(1002, 0),
+            Ok(ParameterMode::Position)
+        );
+        assert_eq!(
+            ParameterMode::from_opcode(1002, 1),
+            Ok(ParameterMode::Immediate)
+        );
+        assert_eq!(
+            ParameterMode::from_opcode(1002, 2),
+            Ok(ParameterMode::Position)
+        );
 
-        assert_eq!(vm.current_opcode(), Ok(1));
-        assert_eq!(vm.get_memory(4), Ok(5));
-        assert_eq!(vm.set_memory(0, 2), Ok(()));
-        assert_eq!(vm.set_memory(4, 12), Ok(()));
-        assert_eq!(vm.current_opcode(), Ok(2));
-        assert_eq!(vm.get_memory(4), Ok(12));
+        assert_eq!(
+            ParameterMode::from_opcode(81002, 2),
+            Err(ExecutionError::UnknownMode(8))
+        );
     }
 
     #[test]
-    fn unknown_opcodes() {
-        for opcode in 3..99 {
-            let mut vm = IntcodeVM::new(vec![opcode, 1, 2, 3, 4, 5, 6, 7, 8]);
+    fn parse_opcode() {
+        use Opcode::*;
+        use ParameterMode::*;
 
-            eprintln!("Testing opcode {}", opcode);
-            assert_eq!(vm.step(), Err(ExecutionError::UnknownOpcode));
+        assert_eq!(Opcode::from_raw(1), Ok(Add(Position, Position, Position)));
+        assert_eq!(
+            Opcode::from_raw(2),
+            Ok(Multiply(Position, Position, Position))
+        );
+        assert_eq!(Opcode::from_raw(3), Ok(Input(Position)));
+        assert_eq!(Opcode::from_raw(4), Ok(Output(Position)));
+        assert_eq!(Opcode::from_raw(99), Ok(Halt));
+
+        assert_eq!(
+            Opcode::from_raw(1002),
+            Ok(Multiply(Position, Immediate, Position))
+        );
+        assert_eq!(
+            Opcode::from_raw(1101),
+            Ok(Add(Immediate, Immediate, Position))
+        );
+
+        assert_eq!(Opcode::from_raw(2101), Err(ExecutionError::UnknownMode(2)));
+
+        for opcode in 5..98 {
+            assert_eq!(
+                Opcode::from_raw(opcode),
+                Err(ExecutionError::UnknownOpcode(opcode))
+            );
         }
     }
 
     #[test]
-    fn given_example_1() {
+    fn mess_with_memory() {
+        let mut vm = IntcodeVM::new(vec![1, 2, 3, 4, 5]);
+
+        assert_eq!(vm.current_raw_opcode(), Ok(1));
+        assert_eq!(vm.get_memory(4), Ok(5));
+        assert_eq!(vm.set_memory(0, 2), Ok(()));
+        assert_eq!(vm.set_memory(4, 12), Ok(()));
+        assert_eq!(vm.current_raw_opcode(), Ok(2));
+        assert_eq!(vm.get_memory(4), Ok(12));
+    }
+
+    #[test]
+    fn input_output() {
+        let mut single_io = IntcodeVM::new(vec![3, 0, 4, 0, 99]);
+        single_io.push_input(5);
+        single_io.run_to_end().unwrap();
+        assert_eq!(single_io.pop_output(), Some(5));
+
+        let mut flip_io = IntcodeVM::new(vec![3, 0, 3, 1, 4, 1, 4, 0, 99]);
+        flip_io.push_inputs([100, 200].iter().copied());
+        flip_io.run_to_end().unwrap();
+        assert_eq!(flip_io.pop_output(), Some(200));
+        assert_eq!(flip_io.pop_output(), Some(100));
+
+        // Take two inputs, sum them, and quadruple them
+        let mut quadruple_sum = IntcodeVM::new(vec![
+            3, 0, // Input to slot 0
+            3, 1, // Input to slot 1
+            1, 0, 1, 0, // Sum slots 0 and 1, outputting to slot 0
+            102, 4, 0, 0, // Multiply immediate 4 with slot 0, outputting to slot 0
+            4, 0, // Output value in slot 0
+            99,
+        ]);
+        quadruple_sum.push_inputs([4, 6].iter().copied());
+        quadruple_sum.run_to_end().unwrap();
+        assert_eq!(quadruple_sum.pop_output(), Some(40));
+    }
+
+    #[test]
+    fn opcode_based_on_input() {
+        // Take two values and an opcode, then operate on them with that opcode
+        // and return the result.
+        let program = vec![
+            3, 0, // Input to slot 0
+            3, 1, // Input to slot 1
+            3, 6, // Input to slot 6,
+            99, 0, 1,
+            2, // Opcode 99 is replaced with 3rd input; runs from 0 and 1, outputting to 2
+            4, 2,  // Output from slot 2
+            99, // Halt for real this time
+        ];
+
+        let mut add_vm = IntcodeVM::new(program.clone());
+        add_vm.push_inputs([4, 5, 1].iter().cloned());
+        add_vm.run_to_end().unwrap();
+        assert_eq!(add_vm.pop_output(), Some(9));
+
+        let mut mul_vm = IntcodeVM::new(program.clone());
+        mul_vm.push_inputs([4, 5, 2].iter().cloned());
+        mul_vm.run_to_end().unwrap();
+        assert_eq!(mul_vm.pop_output(), Some(20));
+    }
+
+    #[test]
+    fn given_example_day2_1() {
         let mut vm = IntcodeVM::new(vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50]);
 
         assert_eq!(vm.step(), Ok(true));
@@ -182,7 +385,7 @@ mod test {
     }
 
     #[test]
-    fn given_example_2() {
+    fn given_example_day2_2() {
         let mut vm1 = IntcodeVM::new(vec![1, 0, 0, 0, 99]);
         let mut vm2 = IntcodeVM::new(vec![2, 3, 0, 3, 99]);
         let mut vm3 = IntcodeVM::new(vec![2, 4, 4, 5, 99, 0]);
