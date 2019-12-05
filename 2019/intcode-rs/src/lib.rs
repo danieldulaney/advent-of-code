@@ -122,6 +122,11 @@ impl IntcodeVM {
         self.output.pop_front()
     }
 
+    /// Get an interator over the output queue
+    pub fn iter_output<'a>(&'a self) -> impl Iterator<Item = &i64> {
+        self.output.iter()
+    }
+
     /// Get the raw opcode value pointed to by the current PC
     pub fn current_raw_opcode(&self) -> Result<i64> {
         self.get_memory(self.pc)
@@ -241,6 +246,14 @@ impl IntcodeVM {
         use std::convert::TryInto;
 
         value.try_into().map_err(|_| ExecutionError::InvalidAddress)
+    }
+}
+
+impl Iterator for IntcodeVM {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.output.pop_front()
     }
 }
 
