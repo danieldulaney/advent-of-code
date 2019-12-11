@@ -1,0 +1,29 @@
+#! /usr/bin/env python3
+
+import sys
+
+parents = {}
+orbits = {}
+
+for line in sys.stdin:
+    inner = line[:3]
+    outer = line[4:7]
+
+    parents[outer] = inner
+
+total_orbits = 0
+
+for planet in parents:
+
+    current = planet
+    print(current, end="", file=sys.stderr)
+
+    while current in parents:
+        current = parents[current]
+        print(" ->", current, end="", file=sys.stderr)
+        total_orbits += 1
+
+    print(file=sys.stderr)
+    print(total_orbits, file=sys.stderr)
+
+print(total_orbits)
