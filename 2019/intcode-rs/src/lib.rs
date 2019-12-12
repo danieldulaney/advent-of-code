@@ -209,6 +209,10 @@ impl IntcodeVM {
     ///
     /// If called again on an already halted program, returns `Err(AlreadyHalted)`.
     pub fn step(&mut self) -> Result<bool> {
+        if self.halted() {
+            return Err(ExecutionError::AlreadyHalted);
+        }
+
         let opcode = Opcode::from_raw(self.current_raw_opcode()?)?;
 
         match &opcode {
@@ -281,6 +285,19 @@ impl IntcodeVM {
         while self.step()? {}
 
         Ok(())
+    }
+
+    /// Run the program until it halts or another output is generated
+    ///
+    /// If an output is available immediately, no progress is made in the program.
+    pub fn next_output(&mut self) -> Result<Option<i64>> {
+        let mut keep_going = true;
+
+        while self.output.is_empty() && keep_going {
+            keep_going = self.step()?;
+        }
+
+        Ok(self.output.pop_front())
     }
 
     /// Check if the VM has halted
@@ -390,6 +407,18 @@ mod test {
     }
 
     #[test]
+    fn next_output() {
+        // Simple program outputs 1, 2, 3
+        let mut vm = IntcodeVM::new(vec![104, 1, 104, 2, 104, 3, 99]);
+
+        assert_eq!(vm.next_output(), Ok(Some(1)));
+        assert_eq!(vm.next_output(), Ok(Some(2)));
+        assert_eq!(vm.next_output(), Ok(Some(3)));
+        assert_eq!(vm.next_output(), Ok(None));
+        assert_eq!(vm.next_output(), Err(ExecutionError::AlreadyHalted));
+    }
+
+    #[test]
     fn mess_with_memory() {
         let mut vm = IntcodeVM::new(vec![1, 2, 3, 4, 5]);
 
@@ -399,6 +428,14 @@ mod test {
         assert_eq!(vm.set_memory(4, 12), Ok(()));
         assert_eq!(vm.current_raw_opcode(), Ok(2));
         assert_eq!(vm.get_memory(4), Ok(12));
+    }
+
+    #[test]
+    fn run_after_halt() {
+        let mut vm = IntcodeVM::new(vec![1, 0, 0, 0, 99]);
+
+        vm.run_to_end().unwrap();
+        assert_eq!(vm.step(), Err(ExecutionError::AlreadyHalted));
     }
 
     #[test]
